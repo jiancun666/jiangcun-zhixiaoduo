@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.ChannelUserMapper">
+
+    <!-- 按当前页人员 ID 批量查询导出扩展字段，避免逐人查询。 -->
+    <select id="selectExportRows" resultType="com.semple.zhixiaoduo.model.excel.ChannelUserExportRow">
+        SELECT cu.id AS channelUserId,
+               cu.employee_status AS employeeStatusCode,
+               cu.settled AS settledCode,
+               cu.id_card_front_url AS idCardFrontUrl,
+               cu.id_card_back_url AS idCardBackUrl,
+               cu.contract_file_urls AS contractFileUrls,
+               cu.user_name AS userName,
+               cu.employee_no AS employeeNo,
+               cu.contact_phone AS contactPhone,
+               cu.id_card_no AS idCardNo,
+               f.factory_name AS factoryName,
+               ec.channel_name AS channelName,
+               DATE_FORMAT(cu.create_time, '%Y-%m-%d %H:%i') AS createTime,
+               cu.user_policy_detail AS userPolicyDetail,
+               cu.channel_policy_detail AS channelPolicyDetail,
+               DATE_FORMAT(cu.contract_signed_time, '%Y-%m-%d %H:%i') AS contractSignedTime,
+               DATE_FORMAT(cu.employment_date, '%Y-%m-%d') AS employmentDate,
+               DATE_FORMAT(cu.resignation_date, '%Y-%m-%d') AS resignationDate,
+               cu.settlement_salary AS settlementSalary,
+               cu.insurance_expense AS insuranceExpense,
+               cu.performance_expense AS performanceExpense,
+               cu.abandon_reason AS remark
+        FROM channel_user cu
+        LEFT JOIN factory f ON f.id = cu.factory_id
+            AND f.enterprise_id = cu.enterprise_id AND f.deleted = 1
+        LEFT JOIN employee_channel ec ON ec.id = cu.channel_id
+            AND ec.enterprise_id = cu.enterprise_id AND ec.deleted = 1
+        WHERE cu.enterprise_id = #{enterpriseId}
+          AND cu.deleted = 1
+          AND cu.id IN
+        <foreach collection="channelUserIds" item="channelUserId" open="(" separator="," close=")">
+            #{channelUserId}
+        </foreach>
+    </select>
+
+    <insert id="insertBatch">
+        INSERT INTO channel_user (
+            id, enterprise_id, channel_id, factory_id, user_name, contact_phone, id_card_no, employee_status,
+            policy_type, user_policy_detail, channel_policy_detail, ethnicity, gender, deleted, create_by, create_time, update_by, update_time
+        ) VALUES
+        <foreach collection="users" item="user" separator=",">
+            (
+                #{user.id}, #{user.enterpriseId}, #{user.channelId}, #{user.factoryId}, #{user.userName},
+                #{user.contactPhone}, #{user.idCardNo}, #{user.employeeStatus}, #{user.policyType},
+                #{user.userPolicyDetail}, #{user.channelPolicyDetail}, #{user.ethnicity}, #{user.gender},
+                1, #{user.createBy}, NOW(), #{user.updateBy}, NOW()
+            )
+        </foreach>
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE channel_user
+        <set>
+            employee_status = #{update.employeeStatus},
+            <if test="update.userName != null">
+                user_name = #{update.userName},
+            </if>
+            <if test="update.idCardNo != null">
+                id_card_no = #{update.idCardNo},
+            </if>
+            <if test="update.idCardFrontUrl != null">
+                id_card_front_url = #{update.idCardFrontUrl},
+            </if>
+            <if test="update.idCardBackUrl != null">
+                id_card_back_url = #{update.idCardBackUrl},
+            </if>
+            <if test="update.transportType != null">
+                transport_type = #{update.transportType},
+            </if>
+            <if test="update.transportCost != null">
+                transport_cost = #{update.transportCost},
+            </if>
+            <if test="update.contractSignedTime != null">
+                contract_signed_time = #{update.contractSignedTime},
+            </if>
+            <if test="update.contractFileUrls != null">
+                contract_file_urls = #{update.contractFileUrls},
+            </if>
+            <if test="update.employmentDate != null">
+                employment_date = #{update.employmentDate},
+            </if>
+            <if test="update.employeeNo != null">
+                employee_no = #{update.employeeNo},
+            </if>
+            <if test="update.paymentMethod != null">
+                payment_method = #{update.paymentMethod},
+            </if>
+            <if test="update.bankCardImageUrl != null">
+                bank_card_image_url = #{update.bankCardImageUrl},
+            </if>
+            <if test="update.payeeName != null">
+                payee_name = #{update.payeeName},
+            </if>
+            <if test="update.bankCardNo != null">
+                bank_card_no = #{update.bankCardNo},
+            </if>
+            <if test="update.bankName != null">
+                bank_name = #{update.bankName},
+            </if>
+            <if test="update.proxyIdCardNo != null">
+                proxy_id_card_no = #{update.proxyIdCardNo},
+            </if>
+            <if test="update.proxyPhone != null">
+                proxy_phone = #{update.proxyPhone},
+            </if>
+            <if test="update.resignationDate != null">
+                resignation_date = #{update.resignationDate},
+            </if>
+            <if test="update.settled != null">
+                settled = #{update.settled},
+            </if>
+            <if test="update.settled != null and update.settled == 0">
+                settlement_salary = NULL,
+                insurance_expense = NULL,
+                performance_expense = NULL,
+            </if>
+            <if test="update.settlementSalary != null">
+                settlement_salary = #{update.settlementSalary},
+            </if>
+            <if test="update.insuranceExpense != null">
+                insurance_expense = #{update.insuranceExpense},
+            </if>
+            <if test="update.performanceExpense != null">
+                performance_expense = #{update.performanceExpense},
+            </if>
+            <if test="update.abandonReason != null">
+                abandon_reason = #{update.abandonReason},
+            </if>
+            update_by = #{update.updateBy},
+            update_time = NOW()
+        </set>
+        WHERE enterprise_id = #{enterpriseId}
+          AND id = #{id}
+          AND employee_status = #{sourceStatus}
+          AND deleted = 1
+    </update>
+
+    <select id="countActiveDuplicateIdCard" resultType="long">
+        SELECT COUNT(1)
+        FROM channel_user
+        WHERE enterprise_id = #{enterpriseId}
+          AND factory_id = #{factoryId}
+          AND id_card_no = #{idCardNo}
+          AND deleted = 1
+          AND employee_status NOT IN (8, 9)
+        <if test="excludedId != null">
+            AND id != #{excludedId}
+        </if>
+    </select>
+
+    <update id="updatePolicyBatch">
+        UPDATE channel_user
+        SET policy_type = #{policyType},
+            user_policy_detail = #{userDetail},
+            channel_policy_detail = #{channelDetail},
+            update_time = NOW()
+        WHERE enterprise_id = #{enterpriseId}
+          AND deleted = 1
+          AND factory_id = #{factoryId}
+        <if test="channelId != null">
+            AND channel_id = #{channelId}
+        </if>
+        <if test="objectType != null and objectType == 2">
+            AND employee_status = 1
+        </if>
+        <if test="objectType != null and objectType == 1">
+            AND (policy_type IS NULL OR user_policy_detail IS NULL OR channel_policy_detail IS NULL)
+        </if>
+    </update>
+
+    <select id="selectUserPage" resultType="com.semple.zhixiaoduo.model.vo.ChannelUserPageVO">
+        SELECT cu.id, cu.user_name AS userName, cu.employee_status AS employeeStatus,
+               cu.contact_phone AS contactPhone, cu.id_card_no AS idCardNo,
+               f.factory_name AS factoryName,
+               cu.channel_id AS channelId,
+               ec.channel_name AS channelName,
+               cu.employee_no AS employeeNo,
+               COALESCE(NULLIF(TRIM(creator.name), ''), '') AS createUserName,
+               DATE_FORMAT(cu.employment_date, '%Y-%m-%d') AS employmentDate,
+               DATE_FORMAT(cu.create_time, '%Y-%m-%d %H:%i') AS createTime,
+               CASE WHEN EXISTS (SELECT 1 FROM channel_user duplicate_user
+                    WHERE duplicate_user.enterprise_id = cu.enterprise_id AND duplicate_user.factory_id = cu.factory_id
+                      AND duplicate_user.id_card_no = cu.id_card_no AND duplicate_user.id != cu.id
+                      AND duplicate_user.deleted = 1 AND duplicate_user.employee_status NOT IN (8, 9)) THEN 1 ELSE 0 END AS duplicateIdCard,
+               CASE WHEN cu.policy_type IS NULL OR cu.user_policy_detail IS NULL OR cu.channel_policy_detail IS NULL THEN 1 ELSE 0 END AS policyIncomplete,
+               CASE
+                   WHEN cu.payment_method IS NULL
+                       OR NULLIF(TRIM(cu.payee_name), '') IS NULL
+                       OR NULLIF(TRIM(cu.bank_card_no), '') IS NULL
+                       OR NULLIF(TRIM(cu.bank_name), '') IS NULL THEN 0
+                   WHEN cu.payment_method = 1 THEN 1
+                   WHEN cu.payment_method = 2
+                       AND NULLIF(TRIM(cu.proxy_id_card_no), '') IS NOT NULL
+                       AND NULLIF(TRIM(cu.proxy_phone), '') IS NOT NULL THEN 1
+                   ELSE 0
+               END AS paymentInfoComplete
+        FROM channel_user cu
+        LEFT JOIN factory f
+            ON f.id = cu.factory_id
+           AND f.enterprise_id = cu.enterprise_id
+           AND f.deleted = 1
+        LEFT JOIN employee_channel ec
+            ON ec.id = cu.channel_id
+           AND ec.enterprise_id = cu.enterprise_id
+           AND ec.deleted = 1
+        LEFT JOIN account creator
+            ON creator.id = cu.create_by
+           AND (creator.enterprise_id = cu.enterprise_id OR creator.account_type = 1)
+        WHERE cu.enterprise_id = #{enterpriseId}
+          AND cu.deleted = 1
+        <if test="request.employeeStatus != null">
+            AND cu.employee_status = #{request.employeeStatus}
+        </if>
+        <if test="request.factoryId != null">
+            AND cu.factory_id = #{request.factoryId}
+        </if>
+        <if test="request.startDate != null">
+            AND cu.create_time <![CDATA[>=]]> #{request.startDate}
+        </if>
+        <if test="request.endDate != null">
+            AND cu.create_time <![CDATA[<]]> DATE_ADD(#{request.endDate}, INTERVAL 1 DAY)
+        </if>
+        <if test="request.keyword != null and request.keyword != ''">
+            AND (cu.user_name LIKE CONCAT('%', #{request.keyword}, '%') OR cu.id_card_no LIKE CONCAT('%', #{request.keyword}, '%'))
+        </if>
+        <choose>
+            <when test="request.statusCategory == 1">
+                AND cu.employee_status = 1
+            </when>
+            <when test="request.statusCategory == 2">
+                AND cu.employee_status IN (2, 3, 4, 5, 6)
+            </when>
+            <when test="request.statusCategory == 3">
+                AND cu.employee_status IN (7, 8)
+            </when>
+            <when test="request.statusCategory == 4">
+                AND cu.employee_status = 9
+            </when>
+        </choose>
+        ORDER BY cu.create_time DESC, cu.id DESC
+    </select>
+
+    <select id="selectMiniUserPage" resultType="com.semple.zhixiaoduo.model.vo.ChannelUserPageVO">
+        SELECT cu.id, cu.user_name AS userName, cu.employee_status AS employeeStatus,
+               cu.contact_phone AS contactPhone, cu.id_card_no AS idCardNo,
+               f.factory_name AS factoryName,
+               cu.channel_id AS channelId,
+               ec.channel_name AS channelName,
+               cu.employee_no AS employeeNo,
+               COALESCE(NULLIF(TRIM(creator.name), ''), '') AS createUserName,
+               DATE_FORMAT(cu.employment_date, '%Y-%m-%d') AS employmentDate,
+               DATE_FORMAT(cu.create_time, '%Y-%m-%d %H:%i') AS createTime,
+               CASE WHEN EXISTS (SELECT 1 FROM channel_user duplicate_user
+                    WHERE duplicate_user.enterprise_id = cu.enterprise_id AND duplicate_user.factory_id = cu.factory_id
+                      AND duplicate_user.id_card_no = cu.id_card_no AND duplicate_user.id != cu.id
+                      AND duplicate_user.deleted = 1 AND duplicate_user.employee_status NOT IN (8, 9)) THEN 1 ELSE 0 END AS duplicateIdCard,
+               CASE WHEN cu.policy_type IS NULL OR cu.user_policy_detail IS NULL OR cu.channel_policy_detail IS NULL THEN 1 ELSE 0 END AS policyIncomplete,
+                CASE
+                WHEN cu.payment_method IS NULL
+                OR NULLIF(TRIM(cu.payee_name), '') IS NULL
+                OR NULLIF(TRIM(cu.bank_card_no), '') IS NULL
+                OR NULLIF(TRIM(cu.bank_name), '') IS NULL THEN 0
+                WHEN cu.payment_method = 1 THEN 1
+                WHEN cu.payment_method = 2
+                AND NULLIF(TRIM(cu.proxy_id_card_no), '') IS NOT NULL
+                AND NULLIF(TRIM(cu.proxy_phone), '') IS NOT NULL THEN 1
+                ELSE 0
+                END AS paymentInfoComplete
+        FROM channel_user cu
+        LEFT JOIN factory f
+            ON f.id = cu.factory_id
+           AND f.enterprise_id = cu.enterprise_id
+           AND f.deleted = 1
+        LEFT JOIN employee_channel ec
+            ON ec.id = cu.channel_id
+           AND ec.enterprise_id = cu.enterprise_id
+           AND ec.deleted = 1
+        LEFT JOIN account creator
+            ON creator.id = cu.create_by
+           AND (creator.enterprise_id = cu.enterprise_id OR creator.account_type = 1)
+        WHERE cu.enterprise_id = #{enterpriseId}
+          AND cu.deleted = 1
+        <if test="request.employeeStatus != null">
+            AND cu.employee_status = #{request.employeeStatus}
+        </if>
+        <if test="request.factoryId != null">
+            AND cu.factory_id = #{request.factoryId}
+        </if>
+        <if test="request.startDate != null">
+            AND cu.create_time <![CDATA[>=]]> #{request.startDate}
+        </if>
+        <if test="request.endDate != null">
+            AND cu.create_time <![CDATA[<]]> DATE_ADD(#{request.endDate}, INTERVAL 1 DAY)
+        </if>
+        <if test="request.keyword != null and request.keyword != ''">
+            AND (cu.user_name LIKE CONCAT('%', #{request.keyword}, '%') OR cu.id_card_no LIKE CONCAT('%', #{request.keyword}, '%'))
+        </if>
+        <choose>
+            <when test="request.statusCategory == 1">
+                AND cu.employee_status = 1
+            </when>
+            <when test="request.statusCategory == 2">
+                AND cu.employee_status IN (2, 3, 4, 5, 6)
+            </when>
+            <when test="request.statusCategory == 3">
+                AND cu.employee_status IN (7, 8)
+            </when>
+            <when test="request.statusCategory == 4">
+                AND cu.employee_status = 9
+            </when>
+        </choose>
+        ORDER BY cu.create_time DESC, cu.id DESC
+    </select>
+
+    <select id="selectOptions" resultType="com.semple.zhixiaoduo.model.vo.ChannelUserOptionVO">
+        SELECT cu.id,
+               cu.user_name AS userName,
+               cu.id_card_no AS idCardNo
+        FROM channel_user cu
+        WHERE cu.enterprise_id = #{enterpriseId}
+          AND cu.deleted = 1
+        <if test="channelId != null">
+            AND cu.channel_id = #{channelId}
+        </if>
+        ORDER BY CASE WHEN cu.employee_status = 8 THEN 1 ELSE 0 END ASC,
+                 cu.create_time DESC,
+                 cu.id DESC
+    </select>
+</mapper>

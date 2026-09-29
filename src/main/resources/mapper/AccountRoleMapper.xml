@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.AccountRoleMapper">
+
+    <!-- 查询角色成员；创建信息取账号角色关系，供页面展示添加人和添加时间。 -->
+    <select id="selectRoleAccountPage"
+            resultType="com.semple.zhixiaoduo.model.vo.RoleAccountListResponse">
+        SELECT relation.account_id AS accountId,
+               member.account AS account,
+               member.name AS name,
+               relation.create_by AS createBy,
+               creator.name AS createByName,
+               relation.create_time AS createTime
+        FROM account_role relation
+        INNER JOIN account member
+                ON member.id = relation.account_id
+               AND member.enterprise_id = relation.enterprise_id
+               AND member.account_type = 2
+               AND member.deleted = 1
+        LEFT JOIN account creator
+               ON creator.id = relation.create_by
+              AND (creator.enterprise_id = relation.enterprise_id OR creator.account_type = 1)
+        WHERE relation.enterprise_id = #{enterpriseId}
+          AND relation.role_id = #{roleId}
+          AND relation.deleted = 1
+        <if test="accountName != null and accountName != ''">
+            AND (member.account LIKE CONCAT('%', #{accountName}, '%')
+                 OR member.name LIKE CONCAT('%', #{accountName}, '%'))
+        </if>
+        ORDER BY relation.create_time DESC, relation.id DESC
+    </select>
+
+    <!-- 候选账号只包含当前企业的企业账号，并排除已经拥有该角色的账号。 -->
+    <select id="selectAvailableAccountPage"
+            resultType="com.semple.zhixiaoduo.model.vo.RoleAvailableAccountResponse">
+        SELECT member.id AS accountId,
+               member.account AS account,
+               member.name AS name,
+               member.status AS status
+        FROM account member
+        WHERE member.enterprise_id = #{enterpriseId}
+          AND member.account_type = 2
+          AND member.deleted = 1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM account_role relation
+              WHERE relation.enterprise_id = member.enterprise_id
+                AND relation.account_id = member.id
+                AND relation.role_id = #{roleId}
+                AND relation.deleted = 1
+          )
+        <if test="accountName != null and accountName != ''">
+            AND (member.account LIKE CONCAT('%', #{accountName}, '%')
+                 OR member.name LIKE CONCAT('%', #{accountName}, '%'))
+        </if>
+        ORDER BY member.create_time DESC, member.id DESC
+    </select>
+
+</mapper>

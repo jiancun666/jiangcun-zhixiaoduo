@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeAdvanceAllocationMapper">
+    <!-- 批量统计垫付记录已经分配的有效归还金额。 -->
+    <select id="sumAllocated" resultType="com.semple.zhixiaoduo.model.vo.EmployeeAdvanceAllocatedVO">
+        SELECT advance_id AS advanceId,
+               COALESCE(SUM(allocated_amount), 0) AS allocatedAmount
+        FROM employee_advance_allocation
+        WHERE enterprise_id = #{enterpriseId}
+          AND deleted = 1
+          AND advance_id IN
+        <foreach collection="advanceIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        GROUP BY advance_id
+    </select>
+
+    <!-- 离职账清需要一次写入全部原垫付余额分配，避免循环访问数据库。 -->
+    <insert id="insertBatch">
+        INSERT INTO employee_advance_allocation (
+            id, enterprise_id, repayment_id, advance_id, allocated_amount,
+            deleted, create_by, create_time, update_by, update_time
+        ) VALUES
+        <foreach collection="allocations" item="item" separator=",">
+            (
+                #{item.id}, #{enterpriseId}, #{item.repaymentId}, #{item.advanceId},
+                #{item.allocatedAmount}, 1, #{item.createBy}, NOW(), #{item.updateBy}, NOW()
+            )
+        </foreach>
+    </insert>
+</mapper>

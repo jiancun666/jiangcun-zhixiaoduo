@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeAdvanceMapper">
+
+    <sql id="queryPage">
+        SELECT ea.id,
+        ea.channel_id AS channelId,
+        ec.channel_name AS channelName,
+        ea.channel_user_id AS channelUserId,
+        cu.user_name AS channelUserName,
+        ea.business_type AS businessType,
+        ea.cost_type AS costType,
+        ea.amount,
+        ea.remark,
+        creator.name AS createUserName,
+        DATE_FORMAT(ea.create_time, '%Y-%m-%d %H:%i') AS createTime
+        FROM employee_advance ea
+        LEFT JOIN employee_channel ec
+        ON ec.id = ea.channel_id
+        AND ec.enterprise_id = ea.enterprise_id
+        AND ec.deleted = 1
+        LEFT JOIN channel_user cu
+        ON cu.id = ea.channel_user_id
+        AND cu.enterprise_id = ea.enterprise_id
+        AND cu.deleted = 1
+        LEFT JOIN account creator
+        ON creator.id = ea.create_by
+        AND (creator.enterprise_id = ea.enterprise_id OR creator.account_type = 1)
+        WHERE ea.enterprise_id = #{enterpriseId}
+        AND ea.deleted = 1
+        <if test="request.channelId != null">
+            AND ea.channel_id = #{request.channelId}
+        </if>
+        <if test="request.channelUserId != null">
+            AND ea.channel_user_id = #{request.channelUserId}
+        </if>
+        ORDER BY ea.create_time DESC, ea.id DESC
+    </sql>
+
+    <!-- 先按时间正序累计垫付减还款，再按最新流水倒序分页展示。 -->
+    <select id="selectUserAdvancePage" resultType="com.semple.zhixiaoduo.model.vo.ChannelUserAdvanceRecordVO">
+        SELECT running.business_type AS businessType,
+               running.cost_type AS costType,
+               running.amount,
+               running.remainingAdvanceAmount,
+               running.remark,
+               creator.name AS createUserName,
+               DATE_FORMAT(running.create_time, '%Y-%m-%d %H:%i') AS createTime
+        FROM (
+            SELECT ea.*,
+                   SUM(CASE WHEN ea.trans_type = 1 THEN ea.amount ELSE -ea.amount END)
+                       OVER (PARTITION BY ea.enterprise_id, ea.channel_user_id
+                             ORDER BY ea.create_time ASC, ea.id ASC
+                             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS remainingAdvanceAmount
+            FROM employee_advance ea
+            WHERE ea.enterprise_id = #{enterpriseId}
+              AND ea.channel_user_id = #{request.channelUserId}
+              AND ea.deleted = 1
+        ) running
+        LEFT JOIN account creator ON creator.id = running.create_by
+            AND (creator.enterprise_id = running.enterprise_id OR creator.account_type = 1)
+        ORDER BY running.create_time DESC, running.id DESC
+    </select>
+
+    <!-- 小程序端仅统计指定人员全部有效流水的垫付和归还金额。 -->
+    <select id="selectMiniAdvanceStatistics"
+            resultType="com.semple.zhixiaoduo.model.vo.MiniChannelUserAdvanceStatisticsVO">
+        SELECT COALESCE(SUM(CASE WHEN ea.trans_type = 1 THEN ea.amount ELSE 0 END), 0) AS totalAdvanceAmount,
+               COALESCE(SUM(CASE WHEN ea.trans_type = 2 THEN ea.amount ELSE 0 END), 0) AS totalRepaymentAmount
+        FROM employee_advance ea
+        WHERE ea.enterprise_id = #{enterpriseId}
+          AND ea.channel_user_id = #{channelUserId}
+          AND ea.deleted = 1
+    </select>
+
+    <!-- 小程序端垫付流水按交易方向筛选；垫付金额使用负数突出资金支出。 -->
+    <select id="selectMiniUserAdvancePage"
+            resultType="com.semple.zhixiaoduo.model.vo.MiniChannelUserAdvanceRecordVO">
+        SELECT ea.id,
+               creator.name AS createUserName,
+               ea.business_type AS businessType,
+               ea.cost_type AS costType,
+               DATE_FORMAT(ea.create_time, '%Y-%m-%d %H:%i') AS createTime,
+               ea.remark,
+               CASE WHEN ea.trans_type = 1 THEN -ea.amount ELSE ea.amount END AS amount
+        FROM employee_advance ea
+        LEFT JOIN account creator
+               ON creator.id = ea.create_by
+        AND (creator.enterprise_id = ea.enterprise_id OR creator.account_type = 1)
+        WHERE ea.enterprise_id = #{enterpriseId}
+          AND ea.channel_user_id = #{channelUserId}
+          AND ea.deleted = 1
+        <if test="request.transType != null">
+            AND ea.trans_type = #{request.transType}
+        </if>
+        ORDER BY ea.create_time DESC, ea.id DESC
+    </select>
+
+    <!-- 垫付资金分页列表；所有业务数据及关联名称均按企业隔离。 -->
+    <select id="selectAdvancePage" resultType="com.semple.zhixiaoduo.model.vo.EmployeeAdvancePageVO">
+        <include refid="queryPage" />
+    </select>
+
+    <select id="selectAdvancePageNoPermission" resultType="com.semple.zhixiaoduo.model.vo.EmployeeAdvancePageVO">
+        <include refid="queryPage" />
+    </select>
+
+    <select id="sumByUsers" resultType="com.semple.zhixiaoduo.model.vo.EmployeeAdvanceSummaryVO">
+        SELECT channel_user_id AS channelUserId,
+               COALESCE(SUM(CASE WHEN business_type = 'companyAdvance' THEN amount ELSE 0 END), 0) AS companyAdvanceAmount,
+               COALESCE(SUM(CASE WHEN business_type = 'companyAdvance' AND cost_type = '3' THEN amount ELSE 0 END), 0) AS wageAdvanceAmount
+        FROM employee_advance
+        WHERE enterprise_id = #{enterpriseId}
+          AND deleted = 1
+          AND channel_user_id IN
+        <foreach collection="channelUserIds" item="channelUserId" open="(" separator="," close=")">
+            #{channelUserId}
+        </foreach>
+        GROUP BY channel_user_id
+    </select>
+
+    <!-- 固定按创建时间、主键顺序加锁，保证并发归还时严格遵循先进先出。 -->
+    <select id="selectAdvancesForUpdate" resultType="com.semple.zhixiaoduo.bean.EmployeeAdvance">
+        SELECT id, channel_id, channel_user_id, enterprise_id, business_type, cost_type,
+               amount, remark, trans_type, source_type, import_record_id, import_row_no,
+               transaction_no, deleted, create_by, create_time, update_by, update_time
+        FROM employee_advance
+        WHERE enterprise_id = #{enterpriseId}
+          AND channel_id = #{channelId}
+          AND channel_user_id = #{channelUserId}
+          AND cost_type = #{costType}
+          AND trans_type = 1
+          AND deleted = 1
+        ORDER BY create_time ASC, id ASC
+        FOR UPDATE
+    </select>
+
+    <!-- 离职账清跨历史渠道和费用类型锁定人员全部原垫付。 -->
+    <select id="selectAllAdvancesForUpdate" resultType="com.semple.zhixiaoduo.bean.EmployeeAdvance">
+        SELECT id, channel_id, channel_user_id, enterprise_id, business_type, cost_type,
+               amount, remark, trans_type, source_type, import_record_id, import_row_no,
+               transaction_no, deleted, create_by, create_time, update_by, update_time
+        FROM employee_advance
+        WHERE enterprise_id = #{enterpriseId}
+          AND channel_user_id = #{channelUserId}
+          AND trans_type = 1
+          AND deleted = 1
+        ORDER BY create_time ASC, id ASC
+        FOR UPDATE
+    </select>
+
+    <!-- 工资扣回一次锁定所有涉及人员的原垫付，避免逐人查询造成并发下的余额漂移。 -->
+    <select id="selectAllAdvancesForUpdateByUsers" resultType="com.semple.zhixiaoduo.bean.EmployeeAdvance">
+        SELECT id, channel_id, channel_user_id, enterprise_id, business_type, cost_type,
+               amount, remark, trans_type, source_type, import_record_id, import_row_no,
+               transaction_no, deleted, create_by, create_time, update_by, update_time
+        FROM employee_advance
+        WHERE enterprise_id = #{enterpriseId}
+          AND channel_user_id IN
+        <foreach collection="channelUserIds" item="channelUserId" open="(" separator="," close=")">
+            #{channelUserId}
+        </foreach>
+          AND trans_type = 1
+          AND deleted = 1
+        ORDER BY channel_user_id ASC, create_time ASC, id ASC
+        FOR UPDATE
+    </select>
+
+    <!-- 工资扣回主交易按批次写入，和分配明细处于同一个薪资核算事务中。 -->
+    <insert id="insertBatch">
+        INSERT INTO employee_advance (
+            id, enterprise_id, channel_id, channel_user_id, business_type, cost_type,
+            amount, remark, trans_type, source_type, import_record_id, import_row_no,
+            transaction_no, deleted, create_by, create_time, update_by, update_time
+        ) VALUES
+        <foreach collection="advances" item="item" separator=",">
+            (
+                #{item.id}, #{enterpriseId}, #{item.channelId}, #{item.channelUserId},
+                #{item.businessType}, #{item.costType}, #{item.amount}, #{item.remark},
+                #{item.transType}, #{item.sourceType}, #{item.importRecordId}, #{item.importRowNo},
+                #{item.transactionNo}, 1, #{item.createBy}, NOW(), #{item.updateBy}, NOW()
+            )
+        </foreach>
+    </insert>
+
+    <!-- 人走账清金额只汇总 accountSettled 主交易。 -->
+    <select id="sumAccountSettledByUsers"
+            resultType="com.semple.zhixiaoduo.model.vo.EmployeeAdvanceAccountSettledVO">
+        SELECT channel_user_id AS channelUserId,
+               COALESCE(SUM(amount), 0) AS accountSettledAmount
+        FROM employee_advance
+        WHERE enterprise_id = #{enterpriseId}
+          AND deleted = 1
+          AND business_type = 'accountSettled'
+          AND channel_user_id IN
+        <foreach collection="channelUserIds" item="channelUserId" open="(" separator="," close=")">
+            #{channelUserId}
+        </foreach>
+        GROUP BY channel_user_id
+    </select>
+</mapper>

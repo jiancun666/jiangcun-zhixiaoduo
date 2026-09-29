@@ -1,0 +1,93 @@
+package com.semple.zhixiaoduo.utils;
+
+import com.semple.zhixiaoduo.constants.GlobalConstant;
+import com.semple.zhixiaoduo.enums.ResponseExceptionEnum;
+import lombok.Data;
+
+import java.util.Objects;
+
+/**
+ * 描述：统一返回
+ * 作者：aofaming
+ * 日期：2023/2/22 14:12
+ */
+@Data
+public class Result<T> {
+	private String code;
+	private String msg;
+	private T data;
+
+	public static Result<String> success() {
+		Result<String> result = new Result<>();
+		result.setCode(ResponseExceptionEnum.SUCCESS.getCode());
+		result.setMsg(ResponseExceptionEnum.SUCCESS.getMsg());
+		return result;
+	}
+
+	public static <T> Result<T> success(T data) {
+		Result<T> result = new Result<>();
+		result.setCode(ResponseExceptionEnum.SUCCESS.getCode());
+		result.setMsg(ResponseExceptionEnum.SUCCESS.getMsg());
+		result.setData(data);
+		return result;
+	}
+
+	public static <T> Result<T> error(String code, String msg) {
+		Result<T> result = new Result<>();
+		result.setCode(code);
+		result.setMsg(msg);
+		return result;
+	}
+
+	/**
+	 * 返回带结构化数据的失败结果。
+	 *
+	 * @param code 错误编码
+	 * @param msg 错误消息
+	 * @param data 错误数据
+	 * @param <T> 数据类型
+	 * @return 失败结果
+	 */
+	public static <T> Result<T> error(String code, String msg, T data) {
+		Result<T> result = error(code, msg);
+		result.setData(data);
+		return result;
+	}
+
+	public static <T> Result<T> error(String msg) {
+		Result<T> result = new Result<>();
+		result.setCode(ResponseExceptionEnum.INTERNAL_SERVER_ERROR.getCode());
+		result.setMsg(msg);
+		return result;
+	}
+
+	public static <T> Result<T> error() {
+		Result<T> result = new Result<>();
+		result.setCode(ResponseExceptionEnum.INTERNAL_SERVER_ERROR.getCode());
+		result.setMsg(ResponseExceptionEnum.INTERNAL_SERVER_ERROR.getMsg());
+		return result;
+	}
+
+
+	/**
+	 * 简化调用方判断
+	 *
+	 * @return true/false
+	 * @author liufeihua
+	 * @date 2022/6/20 17:58
+	 */
+	public boolean successful() {
+		return Objects.equals(this.code, GlobalConstant.RESULT_CODE_SUCC);
+	}
+
+	/**
+	 * 简化调用方判断
+	 *
+	 * @return true/false
+	 * @author liufeihua
+	 * @date 2022/6/20 17:58
+	 */
+	public boolean fail() {
+		return !Objects.equals(this.code, GlobalConstant.RESULT_CODE_SUCC);
+	}
+}

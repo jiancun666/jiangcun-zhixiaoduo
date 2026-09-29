@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.FactoryBillImportRecordMapper">
+
+    <delete id="deletePhysically">
+        DELETE FROM factory_bill_import_record
+        WHERE enterprise_id = #{enterpriseId}
+          AND id = #{id}
+    </delete>
+</mapper>

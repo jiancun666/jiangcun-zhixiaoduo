@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeChannelMapper">
+
+    <!-- 分页查询当前企业下未删除的渠道，按创建时间和主键倒序排列。 -->
+    <select id="selectChannelPage" resultType="com.semple.zhixiaoduo.bean.EmployeeChannel">
+        SELECT channel.id, channel.response_name, channel.phone, channel.business_license_url,
+               channel.channel_name, channel.cooperation_mode,
+               channel.settle_acct_name, channel.enterprise_id, channel.settle_acct_no,
+               channel.settle_acct_bank_name, channel.deleted, channel.create_by, channel.create_time,
+               channel.update_by, channel.update_time
+        FROM employee_channel channel
+        WHERE channel.enterprise_id = #{enterpriseId}
+          AND channel.deleted = 1
+        ORDER BY channel.create_time DESC, channel.id DESC
+    </select>
+
+</mapper>

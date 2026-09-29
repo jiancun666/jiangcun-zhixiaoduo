@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.FactoryBillImportDetailMapper">
+
+    <delete id="deleteByRecordIds">
+        DELETE FROM factory_bill_import_detail
+        WHERE enterprise_id = #{enterpriseId}
+          AND import_record_id IN
+        <foreach collection="recordIds" item="recordId" open="(" separator="," close=")">
+            #{recordId}
+        </foreach>
+    </delete>
+
+    <insert id="insertBatch">
+        INSERT INTO factory_bill_import_detail
+        (id, enterprise_id, import_record_id, unit_name, employee_code, employee_name, hourly_rate,
+         performance_score, work_hours, expense_subtotal, comprehensive_assessment_fee, payable_total, remark)
+        VALUES
+        <foreach collection="items" item="item" separator=",">
+            (#{item.id}, #{item.enterpriseId}, #{item.importRecordId}, #{item.unitName}, #{item.employeeCode},
+             #{item.employeeName}, #{item.hourlyRate}, #{item.performanceScore}, #{item.workHours},
+             #{item.expenseSubtotal}, #{item.comprehensiveAssessmentFee}, #{item.payableTotal}, #{item.remark})
+        </foreach>
+    </insert>
+
+    <!-- 每个工厂只匹配自己的最新有效月份，最新月无该员工时不回退历史月份。 -->
+    <select id="selectLatestEmployeeBillFields"
+            resultType="com.semple.zhixiaoduo.model.vo.ChannelUserLatestBillFieldsVO">
+        SELECT cu.id AS channelUserId,
+               d.performance_score AS performanceScore,
+               d.work_hours AS workingHours,
+               d.comprehensive_assessment_fee AS comprehensiveAssessmentFee
+        FROM channel_user cu
+        INNER JOIN factory_bill_import_record r
+            ON r.enterprise_id = cu.enterprise_id
+            AND r.factory_id = cu.factory_id
+            AND r.deleted = 1
+            AND r.bill_month = (
+                SELECT MAX(latest.bill_month)
+                FROM factory_bill_import_record latest
+                WHERE latest.enterprise_id = cu.enterprise_id
+                  AND latest.factory_id = cu.factory_id
+                  AND latest.deleted = 1
+            )
+        INNER JOIN factory_bill_import_detail d
+            ON d.enterprise_id = r.enterprise_id
+            AND d.import_record_id = r.id
+            AND d.employee_code = cu.employee_no
+        WHERE cu.enterprise_id = #{enterpriseId}
+          AND cu.deleted = 1
+          AND cu.employee_status IN (7, 8)
+          AND cu.employee_no IS NOT NULL
+          AND cu.employee_no != ''
+          AND cu.id IN
+        <foreach collection="channelUserIds" item="channelUserId" open="(" separator="," close=")">
+            #{channelUserId}
+        </foreach>
+    </select>
+
+    <!-- 只返回员工编号在厂家账单明细中实际出现过的月份。 -->
+    <select id="selectWorkHoursHistory"
+            resultType="com.semple.zhixiaoduo.model.vo.ChannelUserWorkHoursHistoryVO">
+        SELECT r.bill_month AS billMonth,
+               d.performance_score AS performanceScore,
+               d.work_hours AS workingHours,
+               d.comprehensive_assessment_fee AS comprehensiveAssessmentFee
+        FROM factory_bill_import_record r
+        INNER JOIN factory_bill_import_detail d
+            ON d.enterprise_id = r.enterprise_id
+            AND d.import_record_id = r.id
+            AND d.employee_code = #{employeeNo}
+        WHERE r.enterprise_id = #{enterpriseId}
+          AND r.factory_id = #{factoryId}
+          AND r.deleted = 1
+        ORDER BY r.bill_month DESC
+    </select>
+</mapper>

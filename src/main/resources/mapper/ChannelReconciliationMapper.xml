@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.ChannelReconciliationMapper">
+
+    <!--
+        渠道对账聚合分页。主查询固定按企业隔离、排除已发车状态，并按录入月份筛选。
+        各金额和工时子查询先聚合后关联，避免一对多关联造成重复累计。
+    -->
+    <select id="selectReconciliationPage"
+            resultType="com.semple.zhixiaoduo.model.vo.ChannelReconciliationPageVO">
+        SELECT cu.id AS channelUserId,
+               cu.user_name AS userName,
+               cu.employee_status AS employeeStatus,
+               cu.employee_no AS employeeNo,
+               DATE_FORMAT(cu.create_time, '%Y-%m-%d %H:%i') AS createTime,
+               DATE_FORMAT(cu.employment_date, '%Y-%m-%d %H:%i') AS employmentDate,
+               DATE_FORMAT(cu.resignation_date, '%Y-%m-%d %H:%i') AS resignationDate,
+               cu.factory_id AS factoryId,
+               COALESCE(f.factory_name, '') AS factoryName,
+               cu.channel_id AS channelId,
+               COALESCE(ec.channel_name, '') AS channelName,
+               cu.id_card_no AS idCardNo,
+               cu.ethnicity,
+               cu.gender,
+               CASE
+                   WHEN cu.id_card_no REGEXP '^[0-9]{17}[0-9Xx]$'
+                   THEN TIMESTAMPDIFF(YEAR,
+                       STR_TO_DATE(SUBSTRING(cu.id_card_no, 7, 8), '%Y%m%d'), CURDATE())
+                   ELSE NULL
+               END AS age,
+               cu.contact_phone AS contactPhone,
+               cu.transport_type AS transportType,
+               COALESCE(cu.transport_cost, 0) AS transportCost,
+               COALESCE(advance_summary.recovered_transport_cost, 0) AS recoveredTransportCost,
+               cu.policy_type AS policyType,
+               cu.user_policy_detail AS userPolicyDetail,
+               cu.channel_policy_detail AS channelPolicyDetail,
+               COALESCE(work_summary.accumulated_work_hours, 0) AS accumulatedWorkHours,
+               settlement_summary.settle_status AS settleStatus
+        FROM channel_user cu
+        LEFT JOIN factory f
+               ON f.id = cu.factory_id
+              AND f.enterprise_id = cu.enterprise_id
+              AND f.deleted = 1
+        LEFT JOIN employee_channel ec
+               ON ec.id = cu.channel_id
+              AND ec.enterprise_id = cu.enterprise_id
+              AND ec.deleted = 1
+        LEFT JOIN (
+            SELECT channel_user_id,
+                   SUM(amount) AS recovered_transport_cost
+            FROM employee_advance
+            WHERE enterprise_id = #{enterpriseId}
+              AND deleted = 1
+              AND cost_type = '1'
+              AND business_type IN
+                  ('employeeReturn', 'accountSettled', 'salaryRecovery')
+            GROUP BY channel_user_id
+        ) advance_summary ON advance_summary.channel_user_id = cu.id
+        LEFT JOIN (
+            SELECT employee_code,
+                   SUM(work_hours) AS accumulated_work_hours
+            FROM factory_bill_import_detail
+            WHERE enterprise_id = #{enterpriseId}
+            GROUP BY employee_code
+        ) work_summary
+          ON work_summary.employee_code COLLATE utf8mb4_general_ci
+           = cu.employee_no COLLATE utf8mb4_general_ci
+        LEFT JOIN (
+            SELECT detail.user_name,
+                   CAST(detail.id_card_no AS CHAR) AS id_card_no,
+                   detail.settle_month,
+                   -- 账单类型必须与员工政策类型一致：1 长线，2 短线。
+                   -- 因此按账单类型单独聚合，避免长短线状态相互覆盖。
+                   bill.channel_id,
+                   bill.bill_type,
+                   MAX(detail.settle_status) AS settle_status
+            FROM employee_channel_bill_detail detail
+            INNER JOIN employee_channel_bill bill
+                    ON bill.id = detail.channel_bill_id
+                   AND bill.enterprise_id = #{enterpriseId}
+                   AND bill.deleted = 1
+            WHERE detail.deleted = 1
+            GROUP BY detail.user_name, detail.id_card_no, detail.settle_month,
+                     bill.channel_id, bill.bill_type
+        ) settlement_summary
+          ON settlement_summary.user_name COLLATE utf8mb4_general_ci
+           = cu.user_name COLLATE utf8mb4_general_ci
+         AND settlement_summary.id_card_no COLLATE utf8mb4_general_ci
+           = cu.id_card_no COLLATE utf8mb4_general_ci
+         AND settlement_summary.channel_id = cu.channel_id
+         AND settlement_summary.bill_type COLLATE utf8mb4_general_ci
+           = CAST(cu.policy_type AS CHAR) COLLATE utf8mb4_general_ci
+         AND settlement_summary.settle_month = #{request.entryMonth}
+        WHERE cu.enterprise_id = #{enterpriseId}
+          AND cu.deleted = 1
+          AND cu.employee_status != 1
+          AND cu.create_time <![CDATA[>=]]> STR_TO_DATE(CONCAT(#{request.entryMonth}, '-01'), '%Y-%m-%d')
+          AND cu.create_time <![CDATA[<]]> DATE_ADD(
+              STR_TO_DATE(CONCAT(#{request.entryMonth}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+        <if test="request.channelId != null">
+            AND cu.channel_id = #{request.channelId}
+        </if>
+        <if test="request.factoryId != null">
+            AND cu.factory_id = #{request.factoryId}
+        </if>
+        <if test="request.employeeStatus != null">
+            AND cu.employee_status = #{request.employeeStatus}
+        </if>
+        <if test="request.policyType != null">
+            AND cu.policy_type = #{request.policyType}
+        </if>
+        <if test="request.keyword != null and request.keyword != ''">
+            AND (cu.user_name LIKE CONCAT('%', #{request.keyword}, '%')
+              OR cu.id_card_no LIKE CONCAT('%', #{request.keyword}, '%')
+              OR cu.employee_no LIKE CONCAT('%', #{request.keyword}, '%'))
+        </if>
+        ORDER BY cu.create_time DESC, cu.id DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.PermissionMapper">
+
+    <!-- 企业超级管理员不落全量菜单关系，通过内置角色类型直接判定。 -->
+    <select id="countEnterpriseSuperAdminRoles" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM account_role account_role
+        INNER JOIN role_info role_info
+                ON role_info.id = account_role.role_id
+               AND role_info.enterprise_id = account_role.enterprise_id
+               AND role_info.role_type = 1
+               AND role_info.deleted = 1
+        WHERE account_role.enterprise_id = #{enterpriseId}
+          AND account_role.account_id = #{accountId}
+          AND account_role.deleted = 1
+    </select>
+
+    <!-- 汇总账号全部角色拥有的菜单和按钮权限编码，DISTINCT 用于合并多角色重复权限。 -->
+    <select id="selectPermissionCodes" resultType="java.lang.String">
+        SELECT DISTINCT menu.menu_code
+        FROM account_role account_role
+        INNER JOIN role_info role_info
+                ON role_info.id = account_role.role_id
+               AND role_info.enterprise_id = account_role.enterprise_id
+               AND role_info.deleted = 1
+        INNER JOIN role_menu role_menu
+                ON role_menu.role_id = role_info.id
+               AND role_menu.enterprise_id = role_info.enterprise_id
+               AND role_menu.deleted = 1
+        INNER JOIN menu_info menu
+                ON menu.id = role_menu.menu_id
+               AND menu.deleted = 1
+               AND menu.enabled = 1
+        WHERE account_role.enterprise_id = #{enterpriseId}
+          AND account_role.account_id = #{accountId}
+          AND account_role.deleted = 1
+          AND menu.client_type = #{clientType}
+          AND menu.menu_code IS NOT NULL
+          AND menu.menu_code != ''
+    </select>
+
+    <!--
+        查询当前功能最终生效的数据权限范围：
+        actionMenuId 用于确认角色拥有当前功能，scopeMenuId 用于读取该功能所属菜单的数据权限配置。
+        DISTINCT 表示同一账号的多个角色按数据权限并集生效。
+    -->
+    <select id="selectEffectiveDataScopeCodes" resultType="java.lang.String">
+        SELECT DISTINCT role_scope.scope_code
+        FROM account_role account_role
+        INNER JOIN role_info role_info
+                ON role_info.id = account_role.role_id
+               AND role_info.enterprise_id = account_role.enterprise_id
+               AND role_info.deleted = 1
+        INNER JOIN role_menu action_grant
+                ON action_grant.role_id = role_info.id
+               AND action_grant.enterprise_id = role_info.enterprise_id
+               AND action_grant.menu_id = #{actionMenuId}
+               AND action_grant.deleted = 1
+        INNER JOIN role_menu_data_scope role_scope
+                ON role_scope.role_id = role_info.id
+               AND role_scope.enterprise_id = role_info.enterprise_id
+               AND role_scope.menu_id = #{scopeMenuId}
+               AND role_scope.deleted = 1
+        WHERE account_role.enterprise_id = #{enterpriseId}
+          AND account_role.account_id = #{accountId}
+          AND account_role.deleted = 1
+    </select>
+
+    <!-- 查询账号通过全部角色获得的有效菜单，供登录后的菜单树组装。 -->
+    <select id="selectAuthorizedMenus" resultType="com.semple.zhixiaoduo.bean.MenuInfo">
+        SELECT DISTINCT menu.*
+        FROM account_role account_role
+        INNER JOIN role_info role_info
+                ON role_info.id = account_role.role_id
+               AND role_info.enterprise_id = account_role.enterprise_id
+               AND role_info.deleted = 1
+        INNER JOIN role_menu role_menu
+                ON role_menu.role_id = role_info.id
+               AND role_menu.enterprise_id = role_info.enterprise_id
+               AND role_menu.deleted = 1
+        INNER JOIN menu_info menu
+                ON menu.id = role_menu.menu_id
+               AND menu.deleted = 1
+               AND menu.enabled = 1
+        WHERE account_role.enterprise_id = #{enterpriseId}
+          AND account_role.account_id = #{accountId}
+          AND account_role.deleted = 1
+          AND menu.client_type = #{clientType}
+        ORDER BY menu.sort_no ASC, menu.id ASC
+    </select>
+
+    <!-- 查询账号在当前企业绑定的有效角色。 -->
+    <select id="selectAccountRoles" resultType="com.semple.zhixiaoduo.bean.RoleInfo">
+        SELECT DISTINCT role_info.*
+        FROM account_role account_role
+        INNER JOIN role_info role_info
+                ON role_info.id = account_role.role_id
+               AND role_info.enterprise_id = account_role.enterprise_id
+               AND role_info.deleted = 1
+        WHERE account_role.enterprise_id = #{enterpriseId}
+          AND account_role.account_id = #{accountId}
+          AND account_role.deleted = 1
+        ORDER BY role_info.built_in DESC, role_info.create_time ASC, role_info.id ASC
+    </select>
+
+    <!-- 查询角色关联账号，角色权限变更或删除后据此清理账号权限缓存。 -->
+    <select id="selectAccountIdsByRole" resultType="java.lang.Long">
+        SELECT DISTINCT account_id
+        FROM account_role
+        WHERE enterprise_id = #{enterpriseId}
+          AND role_id = #{roleId}
+          AND deleted = 1
+    </select>
+
+</mapper>

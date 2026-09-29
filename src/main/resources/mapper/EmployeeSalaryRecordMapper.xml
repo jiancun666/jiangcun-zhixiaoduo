@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeSalaryRecordMapper">
+
+    <select id="selectRecordPage" resultType="com.semple.zhixiaoduo.model.vo.EmployeeSalaryRecordPageVO">
+        SELECT r.id AS recordId,
+               r.bill_month AS month,
+               r.factory_id AS factoryId,
+               f.factory_name AS factoryName,
+               COUNT(d.id) AS salaryCount,
+               COALESCE(SUM(CASE WHEN d.actual_paid_amount IS NOT NULL THEN 1 ELSE 0 END), 0) AS paidCount,
+               COUNT(d.id) - COALESCE(SUM(CASE WHEN d.actual_paid_amount IS NOT NULL THEN 1 ELSE 0 END), 0) AS pendingCount,
+               r.calculation_status AS calculationStatus,
+               DATE_FORMAT(r.create_time, '%Y-%m-%d %H:%i') AS createTime
+        FROM employee_salary_record r
+        LEFT JOIN employee_salary_detail d ON d.salary_record_id = r.id
+            AND d.enterprise_id = r.enterprise_id AND d.deleted = 1
+        LEFT JOIN factory f ON f.id = r.factory_id
+            AND f.enterprise_id = r.enterprise_id AND f.deleted = 1
+        WHERE r.enterprise_id = #{enterpriseId}
+          AND r.deleted = 1
+        <if test="request.month != null and request.month != ''">
+            AND r.bill_month = #{request.month}
+        </if>
+        <if test="request.factoryId != null">
+            AND r.factory_id = #{request.factoryId}
+        </if>
+        <if test="request.calculationStatus != null">
+            AND r.calculation_status = #{request.calculationStatus}
+        </if>
+        GROUP BY r.id, r.bill_month, r.factory_id, r.factory_name_snapshot, r.calculation_status, r.create_time, f.factory_name
+        ORDER BY r.create_time DESC, r.id DESC
+    </select>
+
+    <select id="selectByIdForUpdate" resultType="com.semple.zhixiaoduo.bean.EmployeeSalaryRecord">
+        SELECT *
+        FROM employee_salary_record
+        WHERE enterprise_id = #{enterpriseId}
+          AND id = #{recordId}
+          AND deleted = 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectByScopeForUpdate" resultType="com.semple.zhixiaoduo.bean.EmployeeSalaryRecord">
+        SELECT *
+        FROM employee_salary_record
+        WHERE enterprise_id = #{enterpriseId}
+          AND bill_month = #{month}
+          AND factory_id = #{factoryId}
+          AND deleted = 1
+        FOR UPDATE
+    </select>
+
+    <delete id="deletePhysicallyById">
+        DELETE FROM employee_salary_record
+        WHERE enterprise_id = #{enterpriseId}
+          AND id = #{salaryRecordId}
+    </delete>
+</mapper>

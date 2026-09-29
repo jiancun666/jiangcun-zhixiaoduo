@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeChannelBillDetailMapper">
+
+    <!-- 批量写入从渠道账单 Excel 解析出的待确认明细。 -->
+    <insert id="insertBatch">
+        INSERT INTO employee_channel_bill_detail (
+            id, channel_bill_id, user_name, id_card_no, settle_status, settle_month,
+            deleted, create_by, create_time, update_by, update_time
+        ) VALUES
+        <foreach collection="details" item="item" separator=",">
+            (
+                #{item.id}, #{item.channelBillId}, #{item.userName}, #{item.idCardNo},
+                #{item.settleStatus}, #{item.settleMonth}, 1,
+                #{item.createBy}, NOW(), #{item.updateBy}, NOW()
+            )
+        </foreach>
+    </insert>
+
+    <!-- 确认或结算账单时，同步推进该账单下全部有效明细的结算状态。 -->
+    <update id="updateSettleStatus">
+        UPDATE employee_channel_bill_detail
+        SET settle_status = #{targetStatus},
+            update_by = #{updateBy},
+            update_time = NOW()
+        WHERE channel_bill_id = #{channelBillId}
+          AND settle_status = #{currentStatus}
+          AND deleted = 1
+    </update>
+
+    <!-- 重新导入同一账单时逻辑删除旧明细，保留历史数据用于审计。 -->
+    <update id="logicalDeleteByBillId">
+        UPDATE employee_channel_bill_detail
+        SET deleted = 0,
+            update_by = #{updateBy},
+            update_time = NOW()
+        WHERE channel_bill_id = #{channelBillId}
+          AND deleted = 1
+    </update>
+
+    <!-- 删除待确认账单时物理删除其全部当前及历史明细。 -->
+    <delete id="hardDeleteByBillId">
+        DELETE FROM employee_channel_bill_detail
+        WHERE channel_bill_id = #{channelBillId}
+    </delete>
+
+    <!-- 同一渠道、月份下，一个人员不能同时出现在长线账单和短线账单中。 -->
+    <select id="selectOtherBillTypeIdCardNos" resultType="java.lang.String">
+        SELECT DISTINCT TRIM(detail.id_card_no)
+        FROM employee_channel_bill_detail detail
+        INNER JOIN employee_channel_bill bill
+                ON bill.id = detail.channel_bill_id
+               AND bill.deleted = 1
+        WHERE bill.enterprise_id = #{enterpriseId}
+          AND bill.channel_id = #{channelId}
+          AND bill.settle_month = #{settleMonth}
+          AND bill.bill_type != #{billType}
+          AND detail.deleted = 1
+    </select>
+</mapper>

@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeSalaryDetailMapper">
+
+    <select id="selectDetailPage" resultType="com.semple.zhixiaoduo.model.vo.EmployeeSalaryDetailVO">
+        SELECT d.id AS detailId,
+               d.salary_record_id AS salaryRecordId,
+               r.calculation_status AS calculationStatus,
+               f.factory_name AS factoryName,
+               d.channel_user_id AS channelUserId,
+               d.match_status AS matchStatus, d.employee_code AS employeeCode,
+               COALESCE(cu.user_name, d.employee_name) AS employeeName,
+               cu.id_card_no AS idCardNo,
+               ec.channel_name AS channelName,
+               cu.employee_status AS employeeStatus,
+               cu.policy_type AS policyType,
+               cu.user_policy_detail AS userPolicyDetail,
+               cu.channel_policy_detail AS channelPolicyDetail,
+               d.bill_hourly_rate AS billHourlyRate, d.performance_score AS performanceScore,
+               d.service_hours AS serviceHours, d.bill_expense_subtotal AS billExpenseSubtotal,
+               d.comprehensive_assessment_fee AS comprehensiveAssessmentFee,
+               d.bill_payable_total AS billPayableTotal, d.employee_unit_price AS employeeUnitPrice,
+               d.handling_fee AS handlingFee, d.management_fee AS managementFee,
+               d.individual_income_tax AS individualIncomeTax, d.salary_remark AS salaryRemark,
+               d.actual_paid_amount AS actualPaidAmount,
+               cu.payment_method AS paymentMethod,
+               cu.payee_name AS payeeName,
+               cu.bank_card_no AS bankCardNo,
+               cu.bank_name AS bankName,
+               cu.proxy_id_card_no AS proxyIdCardNo,
+               cu.proxy_phone AS proxyPhone,
+               d.insurance_amount_snapshot AS insuranceAmount,
+               d.wage_advance_amount_snapshot AS wageAdvanceAmount,
+               d.transport_cost_snapshot AS transportCost,
+               d.medical_accommodation_amount_snapshot AS medicalAccommodationAmount,
+               d.account_settled_amount_snapshot AS accountSettledAmount,
+               d.total_advance_amount_snapshot AS totalAdvanceAmount,
+               d.salary_subtotal_snapshot AS salarySubtotal,
+               d.salary_payable_amount_snapshot AS salaryPayableAmount,
+               d.salary_net_amount_snapshot AS salaryNetAmount
+        FROM employee_salary_detail d
+        INNER JOIN employee_salary_record r ON r.id = d.salary_record_id
+            AND r.enterprise_id = d.enterprise_id AND r.deleted = 1
+        LEFT JOIN factory f ON f.id = r.factory_id
+            AND f.enterprise_id = r.enterprise_id AND f.deleted = 1
+        LEFT JOIN channel_user cu ON cu.id = d.channel_user_id
+            AND cu.enterprise_id = d.enterprise_id AND cu.deleted = 1
+        LEFT JOIN employee_channel ec ON ec.id = cu.channel_id
+            AND ec.enterprise_id = d.enterprise_id AND ec.deleted = 1
+        WHERE d.enterprise_id = #{enterpriseId}
+          AND d.salary_record_id = #{request.salaryRecordId}
+          AND d.deleted = 1
+        <if test="request.payStatus != null and request.payStatus == 1">
+            AND d.actual_paid_amount IS NOT NULL
+        </if>
+        <if test="request.payStatus != null and request.payStatus == 2">
+            AND d.actual_paid_amount IS NULL
+        </if>
+        <if test="request.employeeKeyword != null and request.employeeKeyword != ''">
+            AND (d.employee_code LIKE CONCAT('%', #{request.employeeKeyword}, '%')
+                 OR COALESCE(cu.user_name, d.employee_name) LIKE CONCAT('%', #{request.employeeKeyword}, '%')
+                 OR RIGHT(COALESCE(cu.id_card_no, ''), 4) = #{request.employeeKeyword})
+        </if>
+        ORDER BY d.id ASC
+    </select>
+
+    <!-- 工资名单查询范围与薪资明细一致，未匹配人员使用薪资明细中的基础信息。 -->
+    <select id="selectRosterPage" resultType="com.semple.zhixiaoduo.model.vo.EmployeeSalaryRosterVO">
+        SELECT d.unit_name AS factoryName,
+               CASE WHEN r.calculation_status = 2 THEN COALESCE(d.user_name_snapshot, d.employee_name)
+                    ELSE COALESCE(cu.user_name, d.employee_name) END AS employeeName,
+               d.employee_code AS employeeCode,
+               ec.channel_name AS channelName
+        FROM employee_salary_detail d
+        INNER JOIN employee_salary_record r ON r.id = d.salary_record_id
+            AND r.enterprise_id = d.enterprise_id AND r.deleted = 1
+        LEFT JOIN channel_user cu ON cu.id = d.channel_user_id
+            AND cu.enterprise_id = d.enterprise_id AND cu.deleted = 1
+        LEFT JOIN employee_channel ec ON ec.id = cu.channel_id
+            AND ec.enterprise_id = d.enterprise_id AND ec.deleted = 1
+        WHERE d.enterprise_id = #{enterpriseId}
+          AND d.salary_record_id = #{request.salaryRecordId}
+          AND d.deleted = 1
+        <if test="request.payStatus != null and request.payStatus == 1">
+            AND d.actual_paid_amount IS NOT NULL
+        </if>
+        <if test="request.payStatus != null and request.payStatus == 2">
+            AND d.actual_paid_amount IS NULL
+        </if>
+        <if test="request.employeeKeyword != null and request.employeeKeyword != ''">
+            AND (d.employee_code LIKE CONCAT('%', #{request.employeeKeyword}, '%')
+                 OR COALESCE(cu.user_name, d.employee_name) LIKE CONCAT('%', #{request.employeeKeyword}, '%')
+                 OR RIGHT(COALESCE(cu.id_card_no, ''), 4) = #{request.employeeKeyword})
+        </if>
+        ORDER BY d.id ASC
+    </select>
+
+    <select id="selectByRecordId" resultType="com.semple.zhixiaoduo.bean.EmployeeSalaryDetail">
+        SELECT *
+        FROM employee_salary_detail
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND deleted = 1
+        ORDER BY id ASC
+    </select>
+
+    <select id="countActualPaid" resultType="int">
+        SELECT COUNT(1)
+        FROM employee_salary_detail
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND actual_paid_amount IS NOT NULL
+          AND deleted = 1
+    </select>
+
+    <select id="selectPersonnelSnapshots" resultType="com.semple.zhixiaoduo.model.EmployeeSalaryPersonnelProjection">
+        SELECT d.id AS detailId,
+               d.channel_user_id AS channelUserId,
+               cu.user_name AS userName,
+               cu.id_card_no AS idCardNo, ec.channel_name AS channelName,
+               cu.employee_status AS employeeStatus, cu.policy_type AS policyType,
+               cu.user_policy_detail AS userPolicyDetail, cu.channel_policy_detail AS channelPolicyDetail,
+               cu.payment_method AS paymentMethod, cu.payee_name AS payeeName,
+               cu.bank_card_no AS bankCardNo, cu.bank_name AS bankName,
+               cu.proxy_id_card_no AS proxyIdCardNo, cu.proxy_phone AS proxyPhone
+        FROM employee_salary_detail d
+        LEFT JOIN channel_user cu ON cu.id = d.channel_user_id
+            AND cu.enterprise_id = d.enterprise_id AND cu.deleted = 1
+        LEFT JOIN employee_channel ec ON ec.id = cu.channel_id
+            AND ec.enterprise_id = d.enterprise_id AND ec.deleted = 1
+        WHERE d.enterprise_id = #{enterpriseId}
+          AND d.salary_record_id = #{salaryRecordId}
+          AND d.deleted = 1
+    </select>
+
+    <delete id="deletePhysicallyByRecordId">
+        DELETE FROM employee_salary_detail
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+    </delete>
+
+    <insert id="insertBatch">
+        INSERT INTO employee_salary_detail (
+            id, enterprise_id, salary_record_id, bill_detail_id, channel_user_id, match_status,
+            employee_code, employee_name, unit_name, bill_hourly_rate, performance_score, service_hours,
+            bill_expense_subtotal, comprehensive_assessment_fee, bill_payable_total, bill_remark,
+            employee_unit_price, handling_fee, management_fee, individual_income_tax, salary_remark,
+            actual_paid_amount, deleted, create_by, create_time, update_by, update_time
+        ) VALUES
+        <foreach collection="details" item="detail" separator=",">
+            (#{detail.id}, #{detail.enterpriseId}, #{detail.salaryRecordId}, #{detail.billDetailId},
+             #{detail.channelUserId}, #{detail.matchStatus}, #{detail.employeeCode}, #{detail.employeeName},
+             #{detail.unitName}, #{detail.billHourlyRate}, #{detail.performanceScore}, #{detail.serviceHours},
+             #{detail.billExpenseSubtotal}, #{detail.comprehensiveAssessmentFee}, #{detail.billPayableTotal},
+             #{detail.billRemark}, #{detail.employeeUnitPrice}, #{detail.handlingFee}, #{detail.managementFee},
+             #{detail.individualIncomeTax}, #{detail.salaryRemark}, #{detail.actualPaidAmount}, 1,
+             #{detail.createBy}, NOW(), #{detail.updateBy}, NOW())
+        </foreach>
+    </insert>
+
+    <update id="updateSnapshotBatch">
+        UPDATE employee_salary_detail
+        <set>
+            user_name_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.userNameSnapshot}
+                </foreach>
+                ELSE user_name_snapshot
+            END,
+            id_card_no_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.idCardNoSnapshot}
+                </foreach>
+                ELSE id_card_no_snapshot
+            END,
+            channel_name_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.channelNameSnapshot}
+                </foreach>
+                ELSE channel_name_snapshot
+            END,
+            employee_status_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.employeeStatusSnapshot}
+                </foreach>
+                ELSE employee_status_snapshot
+            END,
+            policy_type_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.policyTypeSnapshot}
+                </foreach>
+                ELSE policy_type_snapshot
+            END,
+            user_policy_detail_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.userPolicyDetailSnapshot}
+                </foreach>
+                ELSE user_policy_detail_snapshot
+            END,
+            channel_policy_detail_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.channelPolicyDetailSnapshot}
+                </foreach>
+                ELSE channel_policy_detail_snapshot
+            END,
+            payment_method_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.paymentMethodSnapshot}
+                </foreach>
+                ELSE payment_method_snapshot
+            END,
+            payee_name_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.payeeNameSnapshot}
+                </foreach>
+                ELSE payee_name_snapshot
+            END,
+            bank_card_no_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.bankCardNoSnapshot}
+                </foreach>
+                ELSE bank_card_no_snapshot
+            END,
+            bank_name_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.bankNameSnapshot}
+                </foreach>
+                ELSE bank_name_snapshot
+            END,
+            proxy_id_card_no_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.proxyIdCardNoSnapshot}
+                </foreach>
+                ELSE proxy_id_card_no_snapshot
+            END,
+            proxy_phone_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.proxyPhoneSnapshot}
+                </foreach>
+                ELSE proxy_phone_snapshot
+            END,
+            insurance_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.insuranceAmountSnapshot}
+                </foreach>
+                ELSE insurance_amount_snapshot
+            END,
+            wage_advance_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.wageAdvanceAmountSnapshot}
+                </foreach>
+                ELSE wage_advance_amount_snapshot
+            END,
+            transport_cost_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.transportCostSnapshot}
+                </foreach>
+                ELSE transport_cost_snapshot
+            END,
+            medical_accommodation_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.medicalAccommodationAmountSnapshot}
+                </foreach>
+                ELSE medical_accommodation_amount_snapshot
+            END,
+            account_settled_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.accountSettledAmountSnapshot}
+                </foreach>
+                ELSE account_settled_amount_snapshot
+            END,
+            total_advance_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.totalAdvanceAmountSnapshot}
+                </foreach>
+                ELSE total_advance_amount_snapshot
+            END,
+            salary_subtotal_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.salarySubtotalSnapshot}
+                </foreach>
+                ELSE salary_subtotal_snapshot
+            END,
+            salary_payable_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.salaryPayableAmountSnapshot}
+                </foreach>
+                ELSE salary_payable_amount_snapshot
+            END,
+            salary_net_amount_snapshot = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.salaryNetAmountSnapshot}
+                </foreach>
+                ELSE salary_net_amount_snapshot
+            END,
+            update_time = NOW()
+        </set>
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND id IN
+          <foreach collection="details" item="detail" open="(" separator="," close=")">
+              #{detail.id}
+          </foreach>
+    </update>
+
+    <update id="clearWageFields">
+        UPDATE employee_salary_detail
+        SET employee_unit_price = NULL,
+            handling_fee = NULL,
+            management_fee = NULL,
+            individual_income_tax = NULL,
+            salary_remark = NULL,
+            update_time = NOW()
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND deleted = 1
+    </update>
+
+    <update id="updateWageBatch">
+        UPDATE employee_salary_detail
+        <set>
+            employee_unit_price = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.employeeUnitPrice}
+                </foreach>
+                ELSE employee_unit_price
+            END,
+            handling_fee = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.handlingFee}
+                </foreach>
+                ELSE handling_fee
+            END,
+            management_fee = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.managementFee}
+                </foreach>
+                ELSE management_fee
+            END,
+            individual_income_tax = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.individualIncomeTax}
+                </foreach>
+                ELSE individual_income_tax
+            END,
+            salary_remark = CASE id
+                <foreach collection="details" item="detail">
+                    WHEN #{detail.id} THEN #{detail.salaryRemark}
+                </foreach>
+                ELSE salary_remark
+            END,
+            update_time = NOW()
+        </set>
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND id IN
+          <foreach collection="details" item="detail" open="(" separator="," close=")">
+              #{detail.id}
+          </foreach>
+    </update>
+
+    <update id="clearActualPaidAmount">
+        UPDATE employee_salary_detail
+        SET actual_paid_amount = NULL,
+            update_time = NOW()
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND deleted = 1
+    </update>
+
+    <update id="updatePayoutBatch">
+        UPDATE employee_salary_detail
+        SET actual_paid_amount = CASE id
+            <foreach collection="details" item="detail">
+                WHEN #{detail.id} THEN #{detail.actualPaidAmount}
+            </foreach>
+            ELSE actual_paid_amount
+        END,
+            update_time = NOW()
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND id IN
+          <foreach collection="details" item="detail" open="(" separator="," close=")">
+              #{detail.id}
+          </foreach>
+    </update>
+
+    <update id="updateUnitPrice">
+        UPDATE employee_salary_detail
+        SET employee_unit_price = #{employeeUnitPrice},
+            update_time = NOW()
+        WHERE enterprise_id = #{enterpriseId}
+          AND salary_record_id = #{salaryRecordId}
+          AND id = #{detailId}
+          AND deleted = 1
+    </update>
+</mapper>

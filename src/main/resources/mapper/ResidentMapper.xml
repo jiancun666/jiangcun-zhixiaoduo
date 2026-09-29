@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.ResidentMapper">
+
+    <!-- 按账号锁定当前企业下全部驻场记录，正常记录优先。 -->
+    <select id="selectResidentsByAccountForUpdate"
+            resultType="com.semple.zhixiaoduo.bean.ResidentFactory">
+        SELECT id,
+               account_id,
+               enterprise_id,
+               name,
+               phone,
+               id_card,
+               factory_id,
+               deleted,
+               create_by,
+               create_time,
+               update_by,
+               update_time
+        FROM resident_factory
+        WHERE enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND account_id = #{accountId}
+        ORDER BY deleted DESC, id DESC
+        FOR UPDATE
+    </select>
+
+    <!-- 锁定同企业、同工厂下其他驻场记录的重复身份证号。 -->
+    <select id="selectOtherResidentByFactoryAndIdCardForUpdate"
+            resultType="com.semple.zhixiaoduo.bean.ResidentFactory">
+        SELECT id,
+               account_id,
+               enterprise_id,
+               name,
+               phone,
+               id_card,
+               factory_id,
+               deleted,
+               create_by,
+               create_time,
+               update_by,
+               update_time
+        FROM resident_factory
+        WHERE enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND factory_id = #{factoryId}
+          AND id_card = #{idCard}
+          AND deleted = 1
+        <if test="residentId != null">
+          AND id != #{residentId}
+        </if>
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <!-- 锁定同企业、同账号、同工厂下其他有效驻场记录。 -->
+    <select id="selectOtherResidentByAccountAndFactoryForUpdate"
+            resultType="com.semple.zhixiaoduo.bean.ResidentFactory">
+        SELECT id,
+               account_id,
+               enterprise_id,
+               name,
+               phone,
+               id_card,
+               factory_id,
+               deleted,
+               create_by,
+               create_time,
+               update_by,
+               update_time
+        FROM resident_factory
+        WHERE enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND account_id = #{accountId}
+          AND factory_id = #{factoryId}
+          AND deleted = 1
+        <if test="residentId != null">
+          AND id != #{residentId}
+        </if>
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <!-- 按驻场表主键锁定当前企业下的有效驻场记录。 -->
+    <select id="selectResidentForUpdate"
+            resultType="com.semple.zhixiaoduo.bean.ResidentFactory">
+        SELECT id,
+               account_id,
+               enterprise_id,
+               name,
+               phone,
+               id_card,
+               factory_id,
+               deleted,
+               create_by,
+               create_time,
+               update_by,
+               update_time
+        FROM resident_factory
+        WHERE id = #{residentId}
+          AND enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND deleted = 1
+        FOR UPDATE
+    </select>
+
+    <!-- 锁定账号，保证同一个账号不会并发建立多条驻场记录。 -->
+    <select id="selectEnterpriseAccountForUpdate"
+            resultType="com.semple.zhixiaoduo.bean.Account">
+        SELECT id,
+               enterprise_id,
+               name,
+               status,
+               account_type
+        FROM account
+        WHERE id = #{accountId}
+          AND enterprise_id = #{enterpriseId}
+          AND account_type = 2
+          AND status != 2
+          AND deleted = 1
+        FOR UPDATE
+    </select>
+
+    <!-- 驻场写事务锁定当前登录账号，防止权限在事务中途变化。支持平台账号和企业账号。 -->
+    <select id="selectAccountForShare"
+            resultType="com.semple.zhixiaoduo.bean.Account">
+        SELECT *
+        FROM account
+        WHERE id = #{accountId}
+          AND status = 1
+          AND account_type IN (1, 2)
+          AND deleted = 1
+        FOR SHARE
+    </select>
+
+    <!-- 驻场写事务锁定有效企业，防止企业在校验后被删除。 -->
+    <select id="selectEnterpriseForShare"
+            resultType="com.semple.zhixiaoduo.bean.Enterprise">
+        SELECT *
+        FROM enterprise
+        WHERE id = #{enterpriseId}
+          AND deleted = 1
+        FOR SHARE
+    </select>
+
+    <!-- 恢复历史驻场记录，显式带 deleted 条件以绕过逻辑删除更新限制。 -->
+    <update id="restoreDeleted">
+        UPDATE resident_factory
+        SET account_id = #{accountId},
+            name = #{name},
+            phone = #{phone},
+            id_card = #{idCard},
+            factory_id = #{factoryId},
+            update_by = #{updateBy},
+            update_time = #{updateTime},
+            enterprise_id = CAST(#{enterpriseId} AS CHAR),
+            deleted = 1
+        WHERE id = #{id}
+          AND enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND deleted = 0
+    </update>
+
+    <!-- 按驻场表记录分页，返回驻场主键及关联工厂信息。 -->
+    <select id="selectResidentPage" resultType="com.semple.zhixiaoduo.model.vo.ResidentPageVO">
+        SELECT rf.id AS id,
+               rf.account_id AS accountId,
+               rf.name AS name,
+               rf.phone AS phone,
+               rf.id_card AS idCard,
+               rf.factory_id AS factoryId,
+               f.factory_name AS factoryName,
+               rf.create_by AS createBy,
+               a.name AS createByName,
+               a.account AS createByAccount,
+               rf.create_time AS createTime
+        FROM resident_factory rf
+        INNER JOIN factory f ON f.id = rf.factory_id
+            AND rf.enterprise_id = CAST(f.enterprise_id AS CHAR)
+            AND f.deleted = 1
+            AND f.factory_status = 1
+        LEFT JOIN account a ON a.id = rf.create_by
+            AND (rf.enterprise_id = CAST(a.enterprise_id AS CHAR) OR a.account_type = 1)
+        WHERE rf.enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND rf.deleted = 1
+        ORDER BY rf.create_time DESC, rf.id DESC
+    </select>
+
+    <!-- 移动端按驻场表记录分页，姓名支持模糊查询。 -->
+    <select id="selectMobileResidentPage"
+            resultType="com.semple.zhixiaoduo.model.vo.ResidentMobilePageVO">
+        SELECT rf.id AS id,
+               rf.name AS name,
+               rf.phone AS phone,
+               rf.factory_id AS factoryId,
+               f.factory_name AS factoryName,
+               rf.create_time AS createTime
+        FROM resident_factory rf
+        INNER JOIN factory f ON f.id = rf.factory_id
+            AND rf.enterprise_id = CAST(f.enterprise_id AS CHAR)
+            AND f.deleted = 1
+            AND f.factory_status = 1
+        WHERE rf.enterprise_id = CAST(#{enterpriseId} AS CHAR)
+          AND rf.deleted = 1
+        <if test="keyword != null and keyword != ''">
+            AND rf.name LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY rf.create_time DESC, rf.id DESC
+    </select>
+
+    <!-- 新增或编辑驻场人员时排他锁定目标工厂，保证同工厂身份证校验的并发安全。 -->
+    <select id="selectFactoryForUpdate" resultType="com.semple.zhixiaoduo.bean.Factory">
+        SELECT f.*
+        FROM factory f
+        WHERE f.id = #{factoryId}
+          AND f.enterprise_id = #{enterpriseId}
+          AND f.deleted = 1
+        FOR UPDATE
+    </select>
+</mapper>

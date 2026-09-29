@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.semple.zhixiaoduo.mapper.EmployeeChannelBillMapper">
+
+    <!-- 分页查询当前企业渠道账单，settleMonths 支持多个不连续月份。 -->
+    <select id="selectBillPage" resultType="com.semple.zhixiaoduo.bean.EmployeeChannelBill">
+        SELECT bill.id, bill.channel_id, bill.settle_month, bill.settle_amount, bill.bill_type,
+               bill.bill_detail_url, bill.bill_detail_file_name, bill.settle_status,
+               bill.enterprise_id, bill.remark, bill.deleted, bill.create_by, bill.create_time,
+               bill.update_by, bill.update_time
+        FROM employee_channel_bill bill
+        WHERE bill.enterprise_id = #{enterpriseId}
+          AND bill.deleted = 1
+        <if test="settleMonths != null and settleMonths.size() > 0">
+            AND bill.settle_month IN
+            <foreach collection="settleMonths" item="month" open="(" separator="," close=")">
+                #{month}
+            </foreach>
+        </if>
+        <if test="channelId != null">
+            AND bill.channel_id = #{channelId}
+        </if>
+        ORDER BY bill.create_time DESC, bill.id DESC
+    </select>
+
+    <!-- 微信小程序端查询当前企业全部有效账单，优先按结算月份倒序排列。 -->
+    <select id="selectMiniBillPage" resultType="com.semple.zhixiaoduo.bean.EmployeeChannelBill">
+        SELECT bill.id, bill.channel_id, bill.settle_month, bill.settle_amount,
+               bill.bill_detail_url,bill.bill_detail_file_name, bill.settle_status, bill.enterprise_id, bill.deleted,
+               bill.create_time,bill.create_by,bill.update_by,bill.update_time
+        FROM employee_channel_bill bill
+        WHERE bill.enterprise_id = #{enterpriseId}
+          AND bill.deleted = 1
+        ORDER BY bill.settle_month DESC, bill.create_time DESC, id DESC
+    </select>
+
+    <!--
+        按企业、结算月份和渠道筛选条件，统计所有已结算且未删除账单的总金额。
+        settleMonths 和 channelId 为空时不添加对应筛选条件。
+    -->
+    <select id="sumSettledAmount" resultType="java.math.BigDecimal">
+        SELECT COALESCE(SUM(settle_amount), 0)
+        FROM employee_channel_bill
+        WHERE enterprise_id = #{enterpriseId}
+          AND deleted = 1
+          AND settle_status = '3'
+        <if test="settleMonths != null and settleMonths.size() > 0">
+            AND settle_month IN
+            <foreach collection="settleMonths" item="month" open="(" separator="," close=")">
+                #{month}
+            </foreach>
+        </if>
+        <if test="channelId != null">
+            AND channel_id = #{channelId}
+        </if>
+    </select>
+
+    <!-- 导入覆盖前锁定同一业务键的有效账单，避免并发结算后被重置。 -->
+    <select id="selectByBusinessKeyForUpdate"
+            resultType="com.semple.zhixiaoduo.bean.EmployeeChannelBill">
+        SELECT id, channel_id, settle_month, settle_amount, bill_type,
+               bill_detail_url, bill_detail_file_name, settle_status,
+               enterprise_id, remark, deleted, create_by, create_time,
+               update_by, update_time
+        FROM employee_channel_bill
+        WHERE enterprise_id = #{enterpriseId}
+          AND settle_month = #{settleMonth}
+          AND channel_id = #{channelId}
+          AND bill_type = #{billType}
+          AND deleted = 1
+        ORDER BY create_time DESC, id DESC
+        FOR UPDATE
+    </select>
+
+    <!-- 仅允许物理删除当前企业下仍处于待确认状态的有效账单。 -->
+    <delete id="hardDeletePendingById">
+        DELETE FROM employee_channel_bill
+        WHERE id = #{id}
+          AND enterprise_id = #{enterpriseId}
+          AND settle_status = '1'
+          AND deleted = 1
+    </delete>
+
+</mapper>
